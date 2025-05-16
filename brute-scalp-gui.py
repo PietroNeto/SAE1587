@@ -1,79 +1,143 @@
 import serial
+import time
 import threading
+from datetime import datetime
 import tkinter as tk
 from tkinter import ttk
 
-# Configuração da porta serial
-SERIAL_PORT = '/dev/ttyUSB0'  # ou COMx no Windows
-BAUD_RATE = 9600
+PORT = ""  # Porta inicial vazia
+BAUD = 9600
 
-def parse_j1708_message(buffer):
-    if len(buffer) < 19:
-        return None  # Mensagem incompleta
+last_values = {}  # (mid, pid) -> data
+widgets = {}      # (mid, pid) -> tkinter StringVar
+frames = {}       # MID -> LabelFrame
+serial_thread = None
+serial_running = False
+
+# padrão de Msg
+STX = 0x08
+ETX = 0x6B
+
+# Função para calcular o checksum
+def isValid(data):
+    if(data[0]==STX and data[-1]==ETX):
+        return True
     
-    ID = f"{buffer[0]:02X}"
-    CMD = ' '.join(f"{b:02X}" for b in buffer[1:2])
-    PAYLOAD = ' '.join(f"{b:02X}" for b in buffer[2:4])
-    RODAPE = ' '.join(f"{b:02X}" for b in buffer[16:19])
-    
-    return (ID, CMD, PAYLOAD, RODAPE)
+    return False
 
-class J1708GUI:
-    def __init__(self, master):
-        self.master = master
-        master.title("Leitor J1708/J1587 - 9600bps")
+# Decodifica uma mensagem J1587
+def decode_generic_message(msg_bytes):
+    if len(msg_bytes) < 3:
+        return None
+    mid = msg_bytes[0]
+    pid = msg_bytes[1]
+    data = msg_bytes[2:-1]
+    checksum = msg_bytes[-1]
+    if isValid(msg_bytes):
+        return None
+    return {
+        "mid": mid,
+        "pid": pid,
+        "data": data,
+        "checksum": checksum
+    }
 
-        self.tree = ttk.Treeview(master, columns=('ID', 'CMD', 'PAYLOAD', 'RODAPÉ'), show='headings')
-        for col in ('ID', 'CMD', 'PAYLOAD', 'RODAPÉ'):
-            self.tree.heading(col, text=col)
-        self.tree.pack(fill=tk.BOTH, expand=True)
+# Atualiza a tabela na interface
+def update_table(mid, pid, data):
+    key = (mid, pid)
+    data_str = ' '.join(f"{b}" for b in data)
+    if key not in widgets:
+        if mid not in frames:
+            frames[mid] = ttk.LabelFrame(scrollable_frame, text=f"MID {mid:#04x}")
+            frames[mid].pack(fill='x', expand=True, padx=10, pady=10)
+        var = tk.StringVar()
+        widgets[key] = var
+        row = ttk.Frame(frames[mid])
+        ttk.Label(row, text=f"PID {pid:#04x}", width=15).pack(side='left')
+        ttk.Label(row, textvariable=var, width=100).pack(side='left')
+        row.pack(anchor='w')
+    widgets[key].set(data_str)
 
-        # Botão start/stop
-        self.is_running = False
-        self.btn_start_stop = ttk.Button(master, text="Start", command=self.toggle_reading)
-        self.btn_start_stop.pack(pady=10)
+# Thread de leitura serial
+def read_serial():
+    global serial_running
+    buffer = []
+    try:
+        with serial.Serial(PORT, BAUD, timeout=0.1) as ser:
+            serial_running = True
+            app.after(0, lambda: status_var.set(f"Conectado à porta {PORT}"))
+            while serial_running:
+                byte = ser.read(1)
+                if byte:
+                    buffer.append(ord(byte))
+                    if len(buffer) > 2 and isValid(buffer):
+                        msg = decode_generic_message(buffer)
+                        if msg:
+                            key = (msg['mid'], msg['pid'])
+                            data = tuple(msg['data'])
+                            if key not in last_values or last_values[key] != data:
+                                last_values[key] = data
+                                app.after(0, update_table, msg['mid'], msg['pid'], msg['data'])
+                        buffer = []
+                else:
+                    time.sleep(0.01)
+    except serial.SerialException:
+        app.after(0, lambda: status_var.set("Erro ao abrir porta serial."))
 
-        self.serial_thread = None
+# Inicia a leitura serial
+def start_serial():
+    global PORT, serial_thread, serial_running
+    if serial_running:
+        status_var.set("Leitura já em andamento.")
+        return
+    PORT = port_entry.get().strip()
+    if not PORT:
+        status_var.set("Informe uma porta serial válida.")
+        return
+    status_var.set(f"Tentando conectar na porta {PORT}...")
+    serial_thread = threading.Thread(target=read_serial, daemon=True)
+    serial_thread.start()
 
-    def toggle_reading(self):
-        if self.is_running:
-            # Parar leitura
-            self.is_running = False
-            self.btn_start_stop.config(text="Start")
-        else:
-            # Iniciar leitura
-            self.is_running = True
-            self.btn_start_stop.config(text="Stop")
-            if self.serial_thread is None or not self.serial_thread.is_alive():
-                self.serial_thread = threading.Thread(target=self.read_serial)
-                self.serial_thread.daemon = True
-                self.serial_thread.start()
+# Interface Tkinter
+app = tk.Tk()
+app.title("J1587 PID Monitor")
+app.geometry("600x500")
 
-    def read_serial(self):
-        try:
-            with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
-                buffer = []
-                while self.is_running:
-                    byte = ser.read(1)
-                    if byte:
-                        b = byte[0]
-                        buffer.append(b)
-                        if b == 0x6B and len(buffer) >= 19:
-                            parsed = parse_j1708_message(buffer)
-                            if parsed and buffer[1] == 0xF2:
-                                self.master.after(0, self.insert_row, parsed)
-                            buffer = []
-                        if len(buffer) > 50:
-                            buffer = []
-        except serial.SerialException as e:
-            print(f'Erro na porta serial: {e}')
+# Topo: entrada de porta e botão iniciar
+top_frame = ttk.Frame(app)
+top_frame.pack(padx=10, pady=5, fill='x')
 
-    def insert_row(self, parsed):
-        self.tree.insert('', 0, values=parsed)
-        if len(self.tree.get_children()) > 100:
-            self.tree.delete(self.tree.get_children()[-1])
+port_label = ttk.Label(top_frame, text="Porta Serial:")
+port_label.pack(side='left')
 
-if __name__ == '__main__':
-    root = tk.Tk()
-    app = J1708GUI(root)
-    root.mainloop()
+port_entry = ttk.Entry(top_frame, width=15)
+port_entry.pack(side='left', padx=5)
+
+start_button = ttk.Button(top_frame, text="Iniciar", command=start_serial)
+start_button.pack(side='left', padx=5)
+
+status_var = tk.StringVar()
+status_label = ttk.Label(top_frame, textvariable=status_var, foreground='blue')
+status_label.pack(side='left', padx=10)
+status_var.set("Aguardando porta...")
+
+# Área principal com scrollbar
+container = ttk.Frame(app)
+container.pack(fill='both', expand=True, padx=10, pady=10)
+
+canvas = tk.Canvas(container)
+scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+scrollable_frame = ttk.Frame(canvas)
+
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
+
+app.mainloop()
