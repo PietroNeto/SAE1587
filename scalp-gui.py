@@ -9,8 +9,8 @@ PORT = ""  # Porta inicial vazia
 BAUD = 9600
 
 last_values = {}  # (mid, pid) -> data
-widgets = {}  # (mid, pid) -> tkinter StringVar
-frames = {}  # MID -> LabelFrame
+widgets = {}      # (mid, pid) -> tkinter StringVar
+frames = {}       # MID -> LabelFrame
 serial_thread = None
 serial_running = False
 
@@ -38,16 +38,16 @@ def decode_j1587_message(msg_bytes):
 # Atualiza a tabela na interface
 def update_table(mid, pid, data):
     key = (mid, pid)
-    data_str = ' '.join(f"{b:02X}" for b in data)
+    data_str = ' '.join(f"{b}" for b in data)
     if key not in widgets:
         if mid not in frames:
-            frames[mid] = ttk.LabelFrame(main_frame, text=f"MID {mid:#04x}")
-            frames[mid].pack(fill='x', padx=5, pady=5)
+            frames[mid] = ttk.LabelFrame(scrollable_frame, text=f"MID {mid:#04x}")
+            frames[mid].pack(fill='x', expand=True, padx=10, pady=10)
         var = tk.StringVar()
         widgets[key] = var
         row = ttk.Frame(frames[mid])
-        ttk.Label(row, text=f"PID {pid:#04x}", width=10).pack(side='left')
-        ttk.Label(row, textvariable=var, width=30).pack(side='left')
+        ttk.Label(row, text=f"PID {pid:#04x}", width=15).pack(side='left')
+        ttk.Label(row, textvariable=var, width=100).pack(side='left')
         row.pack(anchor='w')
     widgets[key].set(data_str)
 
@@ -58,6 +58,7 @@ def read_serial():
     try:
         with serial.Serial(PORT, BAUD, timeout=0.1) as ser:
             serial_running = True
+            app.after(0, lambda: status_var.set(f"Conectado à porta {PORT}"))
             while serial_running:
                 byte = ser.read(1)
                 if byte:
@@ -86,13 +87,14 @@ def start_serial():
     if not PORT:
         status_var.set("Informe uma porta serial válida.")
         return
-    status_var.set(f"Conectando na porta {PORT}...")
+    status_var.set(f"Tentando conectar na porta {PORT}...")
     serial_thread = threading.Thread(target=read_serial, daemon=True)
     serial_thread.start()
 
 # Interface Tkinter
 app = tk.Tk()
 app.title("J1587 PID Monitor")
+app.geometry("600x500")
 
 # Topo: entrada de porta e botão iniciar
 top_frame = ttk.Frame(app)
@@ -112,8 +114,23 @@ status_label = ttk.Label(top_frame, textvariable=status_var, foreground='blue')
 status_label.pack(side='left', padx=10)
 status_var.set("Aguardando porta...")
 
-# Área principal de dados
-main_frame = ttk.Frame(app)
-main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+# Área principal com scrollbar
+container = ttk.Frame(app)
+container.pack(fill='both', expand=True, padx=10, pady=10)
+
+canvas = tk.Canvas(container)
+scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+scrollable_frame = ttk.Frame(canvas)
+
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+
+canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+
+canvas.pack(side="left", fill="both", expand=True)
+scrollbar.pack(side="right", fill="y")
 
 app.mainloop()
