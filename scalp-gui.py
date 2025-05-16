@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 PORT = ""  # Porta inicial vazia
-BAUD = 9600
+BAUD = 38400
 
 last_values = {}  # (mid, pid) -> data
 widgets = {}      # (mid, pid) -> tkinter StringVar
