@@ -13,8 +13,7 @@ Blocos que começam com qualquer um dos [(13, 42, 40), (13, 42, 2), (13, 58, 40)
 0D  2A  02  28  0A  FF  18  04  4C  47  0D  FF  FF  11  FF  FF  00  00  10  00  10  00  FD  *3A  3C  3A  FF  00  00  76  01  *99  *A3  66  FF  07  00  0B  05  1A  05  E1  01  -B4  -41  0D  2A - tanque meio
 0D  2A  02  28  0A  FF  18  04  4C  47  0D  FF  FF  11  FF  FF  00  00  10  00  10  00  FD  *5B  3C  3A  FF  00  00  76  01  *5E  *47  66  FF  07  00  0B  05  1A  05  E1  01  -B4  -41  0D  2A - tanque cheio
 0D  2A  02  28  0A  FF  18  04  4C  47  0D  FF  FF  11  FF  FF  00  00  10  00  10  00  FD  *08  3C  3A  FF  00  00  76  01  *1B  *6E  66  FF  07  00  0B  05  1A  05  E1  01  -B4  -41  0D  2A - tanque vazio
-               |FC|  +  len                                                                | TQ |                           | CRC LE | FC  +   len                             | CRC LE | 
-
+STX|MT| IDO|IDD|FC| ST |len|----------------------DATA-------------------------------------| TQ |---------------------------| CRC LE | FC |ST|len |-----------DATA-----------| CRC LE | MT |ETX
 Testando frame 'cheio':
 Start= 4, CRC-16-IBM           => Calc: 0x475E | Esperado: 0x5E47 (BE) / 0x475E (LE) ✅
 Start= 4, CRC-16-ANSI          => Calc: 0x475E | Esperado: 0x5E47 (BE) / 0x475E (LE) ✅
