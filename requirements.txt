@@ -2,3 +2,4 @@ pyserial
 pandas
 jupyter
 matplotlib
+crcmod

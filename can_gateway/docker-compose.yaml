@@ -1,0 +1,6 @@
+services:
+  web:
+    build: .
+    command: python rasp_gateway.py
+    volumes:
+      - .:/code

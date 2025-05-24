@@ -45,8 +45,8 @@ def extract_messages_from_frame(frame):
     messages = []
     index = 2
     total_len = len(frame)
-    ido = fc = frame[0]
-    idd = fc = frame[1]
+    ido = frame[0]
+    idd = frame[1]
 
     while index < total_len - 3:
         fc = frame[index]
